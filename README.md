@@ -18,6 +18,13 @@ An on-chain legal system that:
 * **Automated Judgment:** The smart contract automatically executes the result and releases funds based on the jury's decision.
 * **Reputation System:** Rewards good actors with higher trust and flags bad actors.
 
+## 🤖 AI-Powered Features
+ChainCourt integrates advanced AI to streamline dispute resolution and enhance platform fairness:
+* **AI Evidence Summarization:** Automatically digests chat logs, project specs, and deliverables into a concise, unbiased summary for the jury, saving time and reducing cognitive overload.
+* **Predictive Settlements (Pre-Arbitration):** AI analyzes the initial dispute parameters and historical cases to suggest a fair settlement to both parties before proceeding to a full human jury, significantly reducing arbitration costs and time.
+* **Anomaly & Sybil Detection:** AI continuously monitors jury voting behaviors and network activities to detect collusion, bias, or malicious actors, ensuring the integrity of the decentralized justice system.
+* **Automated Escrow Rules:** AI agents can be employed to automatically verify specific types of deliverables (e.g., code commits passing tests, standard image generation) to trigger escrow release without human intervention.
+
 ## 🧰 Tech Stack
 * **Frontend:** Next.js
 * **Backend:** Node.js, Express, PostgreSQL
