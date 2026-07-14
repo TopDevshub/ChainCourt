@@ -35,10 +35,23 @@ app.post('/api/escrow', async (req, res) => {
   }
 });
 
-// GET /api/escrow - Fetch all escrows
+// GET /api/escrow - Fetch escrows with optional filtering by public key
 app.get('/api/escrow', async (req, res) => {
   try {
+    const { publicKey } = req.query;
+    
+    let whereClause = {};
+    if (publicKey && typeof publicKey === 'string') {
+      whereClause = {
+        OR: [
+          { client: publicKey },
+          { contractor: publicKey }
+        ]
+      };
+    }
+
     const escrows = await prisma.escrow.findMany({
+      where: whereClause,
       orderBy: { createdAt: 'desc' }
     });
     res.json({ success: true, data: escrows });
@@ -69,22 +82,24 @@ app.post('/api/dispute', async (req, res) => {
   const { escrowId, evidence } = req.body;
   
   try {
-    // 1. Generate AI Summary using OpenAI
     console.log(`Generating AI Evidence Summary for Escrow: ${escrowId}`);
-    let aiSummary = "AI Summary Unavailable.";
     
-    if (process.env.OPENAI_API_KEY && process.env.OPENAI_API_KEY !== 'mock-key-for-now') {
-      const response = await openai.chat.completions.create({
-        model: 'gpt-4o',
-        messages: [
-          { role: 'system', content: 'You are an unbiased AI arbitration oracle. Summarize the following evidence and recommend an outcome (e.g., Refund Client, Pay Contractor, or Split).' },
-          { role: 'user', content: evidence }
-        ],
-      });
-      aiSummary = response.choices[0].message.content || aiSummary;
-    } else {
-      // Fallback if no real API key is provided
-      aiSummary = `Mock AI Summary: Based on the provided evidence (${evidence.length} chars), recommend partial refund.`;
+    if (!process.env.OPENAI_API_KEY || process.env.OPENAI_API_KEY === 'mock-key-for-now') {
+      return res.status(500).json({ success: false, error: 'OpenAI API key is missing. Cannot generate AI Summary.' });
+    }
+
+    const response = await openai.chat.completions.create({
+      model: 'gpt-4o',
+      messages: [
+        { role: 'system', content: 'You are an unbiased AI arbitration oracle. Summarize the following evidence and recommend an outcome (e.g., Refund Client, Pay Contractor, or Split).' },
+        { role: 'user', content: evidence }
+      ],
+    });
+    
+    const aiSummary = response.choices[0].message.content;
+    
+    if (!aiSummary) {
+      throw new Error("Failed to generate AI summary content.");
     }
     
     // 2. Update Escrow state in Database

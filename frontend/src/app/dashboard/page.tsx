@@ -12,11 +12,11 @@ export default function Dashboard() {
 
   useEffect(() => {
     const fetchEscrows = async () => {
+      if (!publicKey) return;
       try {
-        const res = await fetch('http://localhost:3001/api/escrow');
+        const res = await fetch(`http://localhost:3001/api/escrow?publicKey=${encodeURIComponent(publicKey)}`);
         const data = await res.json();
         if (data.success) {
-          // In a real app, we'd filter by publicKey, but for MVP we show all or just mock it.
           setEscrows(data.data);
         }
       } catch (err) {
