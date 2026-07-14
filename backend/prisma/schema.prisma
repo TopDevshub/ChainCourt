@@ -1,0 +1,32 @@
+datasource db {
+  provider = "sqlite"
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model Escrow {
+  id              String   @id @default(uuid())
+  client          String
+  contractor      String
+  amount          Float
+  state           String   @default("Active")
+  aiSummary       String?
+  votesClient     Int      @default(0)
+  votesContractor Int      @default(0)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  votes           Vote[]
+}
+
+model Vote {
+  id        String   @id @default(uuid())
+  escrowId  String
+  escrow    Escrow   @relation(fields: [escrowId], references: [id])
+  jurorId   String
+  voteFor   String   // "Client" or "Contractor"
+  createdAt DateTime @default(now())
+
+  @@unique([escrowId, jurorId])
+}
