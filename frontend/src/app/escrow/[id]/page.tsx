@@ -67,9 +67,8 @@ export default function EscrowDetails() {
       console.log('Prompting Freighter to sign...');
       await setAllowed();
       const result = await tx.signAndSend({
-        signTransaction: async (xdr: string) => {
-          const signed = await signTransaction(xdr, { network: "TESTNET" });
-          return signed as string;
+        signTransaction: async (xdr: string): Promise<any> => {
+          return await signTransaction(xdr, { networkPassphrase: "Test SDF Network ; September 2015" });
         }
       });
 
@@ -112,9 +111,8 @@ export default function EscrowDetails() {
 
       await setAllowed();
       const result = await tx.signAndSend({
-        signTransaction: async (xdr: string) => {
-          const signed = await signTransaction(xdr, { network: "TESTNET" });
-          return signed as string;
+        signTransaction: async (xdr: string): Promise<any> => {
+          return await signTransaction(xdr, { networkPassphrase: "Test SDF Network ; September 2015" });
         }
       });
 

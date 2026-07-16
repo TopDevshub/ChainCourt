@@ -99,7 +99,7 @@ app.post('/api/dispute/analyze', async (req, res) => {
       ],
     });
     
-    const aiSummary = response.choices[0].message.content;
+    const aiSummary = response.choices[0]?.message?.content || "No summary provided by AI";
     res.json({ success: true, data: { aiSummary } });
   } catch (error) {
     console.error(error);
@@ -165,7 +165,7 @@ app.post('/api/vote', async (req, res) => {
     }
 
     // Cast vote transaction
-    const result = await prisma.$transaction(async (tx) => {
+    const result = await prisma.$transaction(async (tx: any) => {
       const vote = await tx.vote.create({
         data: { escrowId, jurorId, voteFor }
       });
