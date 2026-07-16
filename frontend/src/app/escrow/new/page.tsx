@@ -5,6 +5,8 @@ import { useWallet } from '@/context/WalletContext';
 import { motion } from 'framer-motion';
 import { Lock, ArrowLeft } from 'lucide-react';
 import Link from 'next/link';
+import { Client, networks } from 'chaincourt';
+import { signTransaction, setAllowed } from '@stellar/freighter-api';
 
 export default function CreateEscrow() {
   const { publicKey, connectWallet } = useWallet();
@@ -20,21 +22,60 @@ export default function CreateEscrow() {
     
     setLoading(true);
     try {
+      // 1. Generate unique Escrow ID
+      const escrowId = crypto.randomUUID().replace(/-/g, '').substring(0, 16);
+      const amountStroops = BigInt(parseFloat(amount) * 10000000);
+      
+      // Native XLM token address on Testnet
+      const nativeToken = "CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC";
+
+      const client = new Client({
+        ...networks.testnet,
+        rpcUrl: 'https://soroban-testnet.stellar.org:443',
+        allowHttp: true,
+        publicKey,
+      });
+
+      console.log('Building transaction...');
+      const tx = await client.create_escrow({
+        id: escrowId,
+        token: nativeToken,
+        client: publicKey,
+        contractor: contractor,
+        amount: amountStroops
+      });
+
+      console.log('Prompting Freighter to sign...');
+      await setAllowed();
+      const result = await tx.signAndSend({
+        signTransaction: async (xdr: string) => {
+          const signed = await signTransaction(xdr, { network: "TESTNET" });
+          return signed as string;
+        }
+      });
+
+      console.log('Transaction Result:', result);
+      
+      // 2. Sync with Backend
       const res = await fetch('http://localhost:3001/api/escrow', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
+          id: escrowId,
           client: publicKey, 
           contractor: contractor, 
-          amount: parseFloat(amount) 
+          amount: parseFloat(amount),
+          txHash: result.result // In a real app, backend would verify this hash
         }),
       });
       const data = await res.json();
+      
       if (data.success) {
         router.push(`/escrow/${data.data.id}`);
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
+      alert('Transaction failed: ' + err.message);
     } finally {
       setLoading(false);
     }

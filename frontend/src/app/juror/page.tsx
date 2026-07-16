@@ -4,6 +4,8 @@ import { useWallet } from '@/context/WalletContext';
 import { motion } from 'framer-motion';
 import { Scale, Users, Bot, CheckCircle2, ChevronRight, AlertCircle } from 'lucide-react';
 import Link from 'next/link';
+import { Client, networks } from 'chaincourt';
+import { signTransaction, setAllowed } from '@stellar/freighter-api';
 
 export default function JurorPortal() {
   const { publicKey, connectWallet } = useWallet();
@@ -35,10 +37,39 @@ export default function JurorPortal() {
     setVotingOn(escrowId);
     
     try {
+      const client = new Client({
+        ...networks.testnet,
+        rpcUrl: 'https://soroban-testnet.stellar.org:443',
+        allowHttp: true,
+        publicKey,
+      });
+
+      console.log('Building vote transaction...');
+      const tx = await client.cast_vote({
+        id: escrowId,
+        juror: publicKey,
+        vote: { tag: voteFor, values: undefined }
+      });
+
+      console.log('Prompting Freighter to sign...');
+      await setAllowed();
+      const result = await tx.signAndSend({
+        signTransaction: async (xdr: string) => {
+          const signed = await signTransaction(xdr, { network: "TESTNET" });
+          return signed as string;
+        }
+      });
+
+      // Sync with backend
       const res = await fetch('http://localhost:3001/api/vote', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ escrowId, jurorId: publicKey, voteFor }),
+        body: JSON.stringify({ 
+          escrowId, 
+          jurorId: publicKey, 
+          voteFor,
+          txHash: result.result
+        }),
       });
       const data = await res.json();
       
@@ -48,9 +79,9 @@ export default function JurorPortal() {
       } else {
         alert(data.error || "Failed to cast vote.");
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
-      alert("Error casting vote");
+      alert("Error casting vote: " + err.message);
     } finally {
       setVotingOn(null);
     }

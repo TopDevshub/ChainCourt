@@ -4,10 +4,14 @@ import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { motion } from 'framer-motion';
 import { ArrowLeft, CheckCircle2, ShieldAlert, Bot } from 'lucide-react';
+import { useWallet } from '@/context/WalletContext';
+import { Client, networks } from 'chaincourt';
+import { signTransaction, setAllowed } from '@stellar/freighter-api';
 
 export default function EscrowDetails() {
   const params = useParams();
   const id = params.id as string;
+  const { publicKey } = useWallet();
   
   const [escrow, setEscrow] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -31,21 +35,105 @@ export default function EscrowDetails() {
 
   const raiseDispute = async () => {
     if (!escrow) return;
+    if (!publicKey) return alert("Connect wallet to raise dispute.");
     setDisputing(true);
     try {
+      // 1. Get AI Summary from backend FIRST
+      const analyzeRes = await fetch('http://localhost:3001/api/dispute/analyze', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ evidence }),
+      });
+      const analyzeData = await analyzeRes.json();
+      if (!analyzeData.success) throw new Error(analyzeData.error);
+      
+      const aiSummary = analyzeData.data.aiSummary;
+
+      // 2. Sign on-chain transaction
+      const client = new Client({
+        ...networks.testnet,
+        rpcUrl: 'https://soroban-testnet.stellar.org:443',
+        allowHttp: true,
+        publicKey,
+      });
+      
+      console.log('Building dispute transaction...');
+      const tx = await client.raise_dispute({
+        id: escrow.id,
+        caller: publicKey,
+        ai_summary: aiSummary.substring(0, 100)
+      });
+
+      console.log('Prompting Freighter to sign...');
+      await setAllowed();
+      const result = await tx.signAndSend({
+        signTransaction: async (xdr: string) => {
+          const signed = await signTransaction(xdr, { network: "TESTNET" });
+          return signed as string;
+        }
+      });
+
+      // 3. Sync with backend
       const res = await fetch('http://localhost:3001/api/dispute', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ escrowId: escrow.id, evidence }),
+        body: JSON.stringify({ 
+          escrowId: escrow.id, 
+          aiSummary,
+          txHash: result.result
+        }),
       });
       const data = await res.json();
       if (data.success) {
         setEscrow(data.data);
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
+      alert('Dispute failed: ' + err.message);
     } finally {
       setDisputing(false);
+    }
+  };
+
+  const escalateToJury = async () => {
+    if (!publicKey) return alert("Connect wallet to escalate.");
+    try {
+      const client = new Client({
+        ...networks.testnet,
+        rpcUrl: 'https://soroban-testnet.stellar.org:443',
+        allowHttp: true,
+        publicKey,
+      });
+
+      const tx = await client.escalate_to_jury({
+        id: escrow.id,
+        caller: publicKey,
+      });
+
+      await setAllowed();
+      const result = await tx.signAndSend({
+        signTransaction: async (xdr: string) => {
+          const signed = await signTransaction(xdr, { network: "TESTNET" });
+          return signed as string;
+        }
+      });
+
+      const res = await fetch('http://localhost:3001/api/dispute/escalate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          escrowId: escrow.id,
+          txHash: result.result
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+         alert("Escalated to Decentralized Jury!");
+         setEscrow(data.data);
+      }
+    } catch (err: any) {
+      console.error(err);
+      alert('Escalation failed: ' + err.message);
     }
   };
 
@@ -167,18 +255,7 @@ export default function EscrowDetails() {
                     Accept & Release Funds
                   </button>
                   <button 
-                    onClick={async () => {
-                      const res = await fetch('http://localhost:3001/api/dispute/escalate', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ escrowId: escrow.id }),
-                      });
-                      const data = await res.json();
-                      if (data.success) {
-                         alert("Escalated to Decentralized Jury!");
-                         setEscrow(data.data); // update local state
-                      }
-                    }}
+                    onClick={escalateToJury}
                     className="flex-1 bg-red-500/20 hover:bg-red-500/30 text-red-400 py-3 rounded-xl font-medium transition-colors border border-red-500/30"
                   >
                     Reject (Escalate to Jury)

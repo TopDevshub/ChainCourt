@@ -20,9 +20,15 @@ const PORT = process.env.PORT || 3001;
 // POST /api/escrow - Create a new escrow record
 app.post('/api/escrow', async (req, res) => {
   try {
-    const { client, contractor, amount } = req.body;
+    const { id, client, contractor, amount, txHash } = req.body;
+    if (!txHash) {
+      return res.status(400).json({ success: false, error: 'Transaction hash is required' });
+    }
+    // In a production app, we would verify txHash with Stellar RPC here.
+    
     const escrow = await prisma.escrow.create({
       data: {
+        id: id || crypto.randomUUID(),
         client,
         contractor,
         amount: parseFloat(amount),
@@ -77,32 +83,36 @@ app.get('/api/escrow/:id', async (req, res) => {
   }
 });
 
-// POST /api/dispute - Raise a dispute with AI analysis
-app.post('/api/dispute', async (req, res) => {
-  const { escrowId, evidence } = req.body;
-  
+// POST /api/dispute/analyze - Generate AI analysis for a dispute
+app.post('/api/dispute/analyze', async (req, res) => {
+  const { evidence } = req.body;
   try {
-    console.log(`Generating AI Evidence Summary for Escrow: ${escrowId}`);
-    
     if (!process.env.OPENAI_API_KEY || process.env.OPENAI_API_KEY === 'mock-key-for-now') {
-      return res.status(500).json({ success: false, error: 'OpenAI API key is missing. Cannot generate AI Summary.' });
+      return res.status(500).json({ success: false, error: 'OpenAI API key missing.' });
     }
 
     const response = await openai.chat.completions.create({
       model: 'gpt-4o',
       messages: [
-        { role: 'system', content: 'You are an unbiased AI arbitration oracle. Summarize the following evidence and recommend an outcome (e.g., Refund Client, Pay Contractor, or Split).' },
+        { role: 'system', content: 'You are an unbiased AI arbitration oracle. Summarize the following evidence and recommend an outcome.' },
         { role: 'user', content: evidence }
       ],
     });
     
     const aiSummary = response.choices[0].message.content;
-    
-    if (!aiSummary) {
-      throw new Error("Failed to generate AI summary content.");
-    }
-    
-    // 2. Update Escrow state in Database
+    res.json({ success: true, data: { aiSummary } });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ success: false, error: 'Failed to analyze dispute' });
+  }
+});
+
+// POST /api/dispute - Raise a dispute after on-chain tx
+app.post('/api/dispute', async (req, res) => {
+  const { escrowId, aiSummary, txHash } = req.body;
+  if (!txHash) return res.status(400).json({ success: false, error: 'Transaction hash is required' });
+
+  try {
     const updatedEscrow = await prisma.escrow.update({
       where: { id: escrowId },
       data: {
@@ -113,7 +123,7 @@ app.post('/api/dispute', async (req, res) => {
     
     res.json({
       success: true,
-      message: 'Dispute raised successfully with AI insights.',
+      message: 'Dispute recorded successfully.',
       data: updatedEscrow
     });
   } catch (error) {
@@ -124,7 +134,9 @@ app.post('/api/dispute', async (req, res) => {
 
 // POST /api/dispute/escalate - Escalate to human jury
 app.post('/api/dispute/escalate', async (req, res) => {
-  const { escrowId } = req.body;
+  const { escrowId, txHash } = req.body;
+  if (!txHash) return res.status(400).json({ success: false, error: 'Transaction hash is required' });
+
   try {
     const updatedEscrow = await prisma.escrow.update({
       where: { id: escrowId },
@@ -139,7 +151,9 @@ app.post('/api/dispute/escalate', async (req, res) => {
 
 // POST /api/vote - Juror casts a vote
 app.post('/api/vote', async (req, res) => {
-  const { escrowId, jurorId, voteFor } = req.body; // voteFor: "Client" | "Contractor"
+  const { escrowId, jurorId, voteFor, txHash } = req.body;
+  if (!txHash) return res.status(400).json({ success: false, error: 'Transaction hash is required' });
+
   try {
     // Check if already voted
     const existingVote = await prisma.vote.findUnique({
